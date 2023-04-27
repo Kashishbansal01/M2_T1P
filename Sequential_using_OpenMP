@@ -1,147 +1,88 @@
 //include necessary header files
-#include <iostream>
+#include <iostream> //for standard input/output operations
 #include <fstream> //for file input/output operations
 #include <cstdlib> //for using rand() function
 #include <ctime> //for seeding the random number generator with current time
 #include <chrono> //for timing the execution of code
-#include <pthread.h>
-#include <omp.h>
+#include <omp.h> //for parallelization using OpenMP
 
 using namespace std;
 
-//Define the struct for passing data to the thread
-struct thread_data {
-    int id; //Thread ID
-    int N; 
-    int p;
-    int **A;
-    int **B;
-    int **C;
-};
-
-//Define the function for matrix multiplication
-void *matrix_multiplication(void *arg)
+int main()
 {
-    //Extract data from the argument
-    struct thread_data *data = (struct thread_data *) arg;
-    int id = data->id; //Thread ID
-    int N = data->N; 
-    int p = data->p;
-    int **A = data->A;
-    int **B = data->B;
-    int **C = data->C;
-    //Calculate the range of rows for this trend
-    int start_row = id * N / p;
-    int end_row = (id + 1) * N / p - 1;
+int N;
+cout << "Enter matrix size N: ";
+cin >> N;
 
-    //Perform matrix multiplication for the assigned rows
-    for (int i = start_row; i <= end_row; i++)
-    {
-        for (int j = 0; j < N; j++)
-        {
-            C[i][j] = 0;
-            for (int k = 0; k < N; k++)
-            {
-               C[i][j] += A[i][k] * B[k][j];
-            }
-            
-        }
-    }
+int num_threads;
+cout << "Enter number of threads: ";
+cin >> num_threads;
+omp_set_num_threads(num_threads);
 
-    //Exit the thread
-    pthread_exit(NULL);
+//Allocate memory for matrices A, B, and C
+int **A, **B, **C;
+A = new int*[N];
+B = new int*[N];
+C = new int*[N];
+for (int i = 0; i < N; i++)
+{
+    A[i] = new int[N];
+    B[i] = new int[N];
+    C[i] = new int[N];
 }
 
-int main() 
+//Initialize matrices A and B with random values
+srand(time(NULL)); //seed the random number generator with the current time
+for (int i = 0; i < N; i++)
 {
-    int N, max_threads;
-    cout << "Enter matrix size N: ";
-    cin >> N;
-    cout << "Enter the number of threads: ";
-    cin >> max_threads;
-
-    //Allocate memory for matrices A, B, and C
-    int **A, **B, **C;
-    A = new int*[N];
-    B = new int*[N];
-    C = new int*[N];
-    for (int i = 0; i < N; i++)
+    for (int j = 0; j < N; j++)
     {
-        A[i] = new int[N];
-        B[i] = new int[N];
-        C[i] = new int[N];
+        A[i][j] = rand() % 10; //generate a random number between 0 and 9 and assign it to A[i][j]
+        B[i][j] = rand() % 10; //generate a random number between 0 and 9 and assign it to B[i][j]
     }
+}
 
-    //Initialize matrices A and B with random values
-    srand(time(NULL));
-    for (int i = 0; i < N; i++)
+//Perform matrix multiplication C = A * B
+auto start = chrono::steady_clock::now(); //get the current time
+#pragma omp parallel for //start parallel execution using OpenMP
+for (int i = 0; i < N; i++)
+{
+    for (int j = 0; j < N; j++)
     {
-        for (int j = 0; j < N; j++)
+        C[i][j] = 0; //initialize the element of C[i][j] to 0
+        for (int k = 0; k < N; k++)
         {
-            A[i][j] = rand() % 10;
-            B[i][j] = rand() % 10;
+            C[i][j] += A[i][k] * B[k][j]; //multiply the corresponding elements of A and B and add to C[i][j]
         }
     }
+}
+auto end = chrono::steady_clock::now(); //get the current time again
+auto diff = end - start; //calculate the difference between the two time points
+double time = chrono::duration<double, milli>(diff).count(); //calculate the time difference in milliseconds
 
-    //Perform matrix multiplication using pthreads
-    cout << "Matrix size: " << N << "x" << N << endl;
-    cout << "Parallel execution" << endl;
-    auto start = chrono::steady_clock::now();
-
-    //Create an array of thread_data structs, one for each thread
-    thread_data thread_data_array[max_threads];
-
-    //Create threads and assign work to each thread
-    pthread_t threads[max_threads];
-    for (int i = 0; i < max_threads; i++)
+//Write matrix C to file
+ofstream outfile("output.txt"); //create an output file stream and open a file called "output.txt"
+for (int i = 0; i < N; i++)
+{
+    for (int j = 0; j < N; j++)
     {
-        //Fill in the thread_data struct for this thread
-        thread_data_array[i].id = i;
-        thread_data_array[i].N = N;
-        thread_data_array[i].p = max_threads;
-        thread_data_array[i].A = A;
-        thread_data_array[i].B = B;
-        thread_data_array[i].C = C;
-
-        //Create the thread
-        pthread_create(&threads[i], NULL, matrix_multiplication, (void*)&thread_data_array[i]);
+        outfile << C[i][j] << " "; //write each element of C to the file
     }
+}
+outfile.close(); //close the output file stream
 
-    //Wait for all threads to finish
-    for (int i = 0; i < max_threads; i++)
-    {
-        pthread_join(threads[i], NULL);
-    }
+//Free memory allocated for matrices A, B, And C
+for (int i = 0; i < N; i++)
+{
+    delete[] A[i];
+    delete[] B[i];
+    delete[] C[i];
+}
+delete[] A;
+delete[] B;
+delete[] C;
 
-    //Calculate execution time 
-    auto end = chrono::steady_clock::now();
-    auto diff = end - start;
-    double time = chrono::duration<double, milli>(diff).count();
-    
-    //Write matrix C to file
-    ofstream outfile("output.txt");
-    for (int i = 0; i < N; i++)
-    {
-        for (int j = 0; j < N; j++)
-        {
-            outfile << C[i][j] << " ";
-        }
-        outfile << endl;
-    }
-    outfile.close();
+cout << "Matrix multiplication took " << time << " milliseconds." << endl; //output the time taken
 
-    //Free memory allocated for matrices A, B, And C
-    for (int i = 0; i < N; i++)
-    {
-        delete[] A[i];
-        delete[] B[i];
-        delete[] C[i];
-    }
-    delete[] A;
-    delete[] B;
-    delete[] C;
-
-    cout << "Matrix multiplication took " << time << " milliseconds." << endl;
-
-    return 0;
+ return 0;
 }
